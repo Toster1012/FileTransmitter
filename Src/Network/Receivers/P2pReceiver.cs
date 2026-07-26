@@ -6,26 +6,33 @@ namespace FileTransmitter;
 
 internal sealed class P2pReceiver : IFileReceiver
 {
-    private readonly IPEndPoint _endPoint;
+    private const int ConnectTimeoutMs = 15000;
+
+    private readonly IPEndPoint[] _endPoints;
     private readonly byte[] _code;
     private readonly string _saveDirectory;
 
     private TcpClient? _client;
 
-    public P2pReceiver(IPEndPoint endPoint, byte[] code, string saveDirectory)
+    public P2pReceiver(IPEndPoint[] endPoints, byte[] code, string saveDirectory)
     {
-        _endPoint = endPoint;
+        _endPoints = endPoints;
         _code = code;
         _saveDirectory = saveDirectory;
     }
 
     public async Task<bool> ReceiveAsync(CancellationToken token)
     {
+        _client = await ConnectAsync(token);
+
+        if (_client is null)
+        {
+            FTViewer.PrintMessage("Error: Could not connect to the sender.\n", ConsoleColor.Red);
+            return false;
+        }
+
         try
         {
-            _client = new TcpClient();
-            await _client.ConnectAsync(_endPoint.Address, _endPoint.Port, token);
-
             using NetworkStream stream = _client.GetStream();
 
             P2pSession? session = await P2pHandshake.PerformAsync(stream, isListener: false, _code, token);
@@ -38,10 +45,57 @@ internal sealed class P2pReceiver : IFileReceiver
 
             return await ReceiveFileAsync(stream, session, token);
         }
+        catch (IOException)
+        {
+            FTViewer.PrintMessage("Error: Connection to the sender was lost.\n", ConsoleColor.Red);
+            return false;
+        }
         catch (SocketException)
         {
-            FTViewer.PrintMessage("Error: Could not connect to the sender.\n", ConsoleColor.Red);
+            FTViewer.PrintMessage("Error: Connection to the sender was lost.\n", ConsoleColor.Red);
             return false;
+        }
+    }
+
+    private async Task<TcpClient?> ConnectAsync(CancellationToken token)
+    {
+        using var timeoutCts = new CancellationTokenSource(ConnectTimeoutMs);
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(token, timeoutCts.Token);
+
+        var attempts = _endPoints
+            .Select(endPoint => TryConnectAsync(endPoint, linkedCts.Token))
+            .ToList();
+
+        while (attempts.Count > 0)
+        {
+            Task<TcpClient?> finished = await Task.WhenAny(attempts);
+            attempts.Remove(finished);
+
+            TcpClient? client = await finished;
+
+            if (client is not null)
+            {
+                linkedCts.Cancel();
+                return client;
+            }
+        }
+
+        return null;
+    }
+
+    private static async Task<TcpClient?> TryConnectAsync(IPEndPoint endPoint, CancellationToken token)
+    {
+        var client = new TcpClient();
+
+        try
+        {
+            await client.ConnectAsync(endPoint.Address, endPoint.Port, token);
+            return client;
+        }
+        catch
+        {
+            client.Dispose();
+            return null;
         }
     }
 
@@ -105,6 +159,9 @@ internal sealed class P2pReceiver : IFileReceiver
         using var cipher = new P2pCipher(session.EncryptionKey);
 
         long totalReceived = acceptedOffset;
+        var progressBar = new ProgressBar();
+
+        progressBar.Report(totalReceived, fileSize);
 
         while (totalReceived < fileSize)
         {
@@ -122,8 +179,10 @@ internal sealed class P2pReceiver : IFileReceiver
 
             totalReceived += plaintext.Length;
 
-            PrintProgress(totalReceived, fileSize);
+            progressBar.Report(totalReceived, fileSize);
         }
+
+        progressBar.Report(fileSize, fileSize);
 
         var (doneType, donePayload) = await P2pFraming.ReadMessageAsync(stream, token);
 
@@ -133,11 +192,5 @@ internal sealed class P2pReceiver : IFileReceiver
         long confirmedSize = System.Buffers.Binary.BinaryPrimitives.ReadInt64BigEndian(donePayload.AsSpan(0, 8));
 
         return confirmedSize == fileSize && totalReceived == fileSize;
-    }
-
-    private static void PrintProgress(long received, long total)
-    {
-        int percent = total == 0 ? 100 : (int)(received * 100 / total);
-        Console.Write($"\r    {percent}% ({received}/{total} bytes)");
     }
 }

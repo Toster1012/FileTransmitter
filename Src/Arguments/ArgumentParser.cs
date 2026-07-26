@@ -7,7 +7,7 @@ internal sealed class ArgumentParser
     private List<string>? _arguments;
     private string? _path;
     private byte[]? _code;
-    private IPEndPoint? _endPoint;
+    private IPEndPoint[]? _endPoints;
 
     public bool TryParse(string[] args)
     {
@@ -15,7 +15,7 @@ internal sealed class ArgumentParser
     }
 
     public string? Path => _path;
-    public IPEndPoint? EndPoint => _endPoint;
+    public IPEndPoint[]? EndPoints => _endPoints;
     public byte[]? Code => _code;
     public bool Help => IsSet(Config.HelpArgument);
     public bool Write => IsSet(Config.WriteArgument);
@@ -96,7 +96,21 @@ internal sealed class ArgumentParser
                         return false;
                     }
 
-                    if (!IPAddress.TryParse(splitEndPoint[0], out var address) || !int.TryParse(splitEndPoint[1], out var port))
+                    string[] addressParts = splitEndPoint[0].Split(',', StringSplitOptions.RemoveEmptyEntries);
+                    var addresses = new List<IPAddress>();
+
+                    foreach (string addressPart in addressParts)
+                    {
+                        if (!IPAddress.TryParse(addressPart, out var parsedAddress))
+                        {
+                            FTViewer.PrintMessage($"Failed parse ip: {addressPart}", ConsoleColor.Red);
+                            return false;
+                        }
+
+                        addresses.Add(parsedAddress);
+                    }
+
+                    if (addresses.Count == 0 || !int.TryParse(splitEndPoint[1], out var port))
                     {
                         FTViewer.PrintMessage($"Failed parse ip: {splitEndPoint[0]} or port: {splitEndPoint[1]} point.", ConsoleColor.Red);
                         return false;
@@ -126,7 +140,7 @@ internal sealed class ArgumentParser
                         return false;
                     }
 
-                    _endPoint = new(address, port);
+                    _endPoints = [.. addresses.Select(a => new IPEndPoint(a, port))];
                     _code = code;
                     return true;
                 }

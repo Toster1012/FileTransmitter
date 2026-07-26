@@ -27,7 +27,7 @@ public sealed class Program
 
         if (_parser.TransferMode == TransferMode.P2pReceive)
         {
-            await StartReceive(_parser.Path, _parser.EndPoint!, _parser.Code!);
+            await StartReceive(_parser.Path, _parser.EndPoints!, _parser.Code!);
             return;
         }
 
@@ -131,9 +131,9 @@ public sealed class Program
         }
     }
 
-    private static async Task StartReceive(string savePath, IPEndPoint endPoint, byte[] code)
+    private static async Task StartReceive(string savePath, IPEndPoint[] endPoints, byte[] code)
     {
-        var receiver = new P2pReceiver(endPoint, code, savePath);
+        var receiver = new P2pReceiver(endPoints, code, savePath);
 
         void CancelHandler(object? sender, ConsoleCancelEventArgs e)
         {

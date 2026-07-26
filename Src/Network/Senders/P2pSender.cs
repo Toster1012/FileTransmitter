@@ -21,28 +21,38 @@ internal sealed class P2pSender : IFileSender
 
         _cts = CancellationTokenSource.CreateLinkedTokenSource(token);
 
+        string? localIp = Utils.GetIp();
+
         var stunClient = new StunClient();
         IPAddress? publicIp = await stunClient.GetPublicIpAsync(_cts.Token);
 
         if (publicIp is null)
-        {
-            FTViewer.PrintMessage("Error: Failed to determine public IP address.\n", ConsoleColor.Red);
-            return false;
-        }
+            FTViewer.PrintMessage("Warning: Failed to determine public IP address. Only local network transfer will be available.\n", ConsoleColor.Yellow);
 
         _portForwarder = new PortForwarder();
         bool mapped = await _portForwarder.TryMapPortAsync(Config.P2pPort, _cts.Token);
 
         if (!mapped)
+            FTViewer.PrintMessage("Warning: Failed to open port automatically. Configure port forwarding manually for transfer outside your local network.\n", ConsoleColor.Yellow);
+
+        var candidates = new List<string>();
+
+        if (!string.IsNullOrEmpty(localIp))
+            candidates.Add(localIp);
+
+        if (publicIp is not null && publicIp.ToString() != localIp)
+            candidates.Add(publicIp.ToString());
+
+        if (candidates.Count == 0)
         {
-            FTViewer.PrintMessage("Error: Failed to open port automatically. Configure port forwarding manually.\n", ConsoleColor.Red);
+            FTViewer.PrintMessage("Error: Failed to determine any reachable IP address.\n", ConsoleColor.Red);
             return false;
         }
 
         byte[] code = RandomNumberGenerator.GetBytes(Config.P2pCodeByteLength);
         string codeText = Base32.Encode(code);
 
-        ConnectionString = $"{publicIp}:{Config.P2pPort}:{codeText}";
+        ConnectionString = $"{string.Join(',', candidates)}:{Config.P2pPort}:{codeText}";
 
         _listener = new TcpListener(IPAddress.Any, Config.P2pPort);
         _listener.Start();
@@ -67,24 +77,41 @@ internal sealed class P2pSender : IFileSender
 
     private async Task AcceptRoutine(string path, byte[] code, CancellationToken token)
     {
-        try
+        while (true)
         {
-            using TcpClient client = await _listener!.AcceptTcpClientAsync(token);
-            using NetworkStream stream = client.GetStream();
+            TcpClient client;
 
-            P2pSession? session = await P2pHandshake.PerformAsync(stream, isListener: true, code, token);
-
-            if (session is null)
+            try
+            {
+                client = await _listener!.AcceptTcpClientAsync(token);
+            }
+            catch
+            {
                 return;
+            }
 
-            await SendFileAsync(stream, session, path, token);
-        }
-        catch
-        {
+            try
+            {
+                using (client)
+                {
+                    using NetworkStream stream = client.GetStream();
+
+                    P2pSession? session = await P2pHandshake.PerformAsync(stream, isListener: true, code, token);
+
+                    if (session is null)
+                        continue;
+
+                    if (await SendFileAsync(stream, session, path, token))
+                        return;
+                }
+            }
+            catch
+            {
+            }
         }
     }
 
-    private static async Task SendFileAsync(NetworkStream stream, P2pSession session, string path, CancellationToken token)
+    private static async Task<bool> SendFileAsync(NetworkStream stream, P2pSession session, string path, CancellationToken token)
     {
         var fileInfo = new FileInfo(path);
 
@@ -101,7 +128,7 @@ internal sealed class P2pSender : IFileSender
         var (resumeType, resumePayload) = await P2pFraming.ReadMessageAsync(stream, token);
 
         if (resumeType != P2pMessageType.ResumeRequest)
-            return;
+            return false;
 
         long resumeOffset = System.Buffers.Binary.BinaryPrimitives.ReadInt64BigEndian(resumePayload.AsSpan(0, 8));
         byte[] resumeHash = resumePayload[8..];
@@ -150,5 +177,7 @@ internal sealed class P2pSender : IFileSender
         System.Buffers.Binary.BinaryPrimitives.WriteInt64BigEndian(donePayload, fileInfo.Length);
 
         await P2pFraming.WriteMessageAsync(stream, P2pMessageType.Done, donePayload, token);
+
+        return true;
     }
 }
