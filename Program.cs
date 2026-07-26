@@ -1,4 +1,5 @@
-﻿using System.Runtime.InteropServices;
+﻿using System.Net;
+using System.Runtime.InteropServices;
 
 namespace FileTransmitter;
 
@@ -24,6 +25,12 @@ public sealed class Program
         if (string.IsNullOrEmpty(_parser.Path))
             return;
 
+        if (_parser.TransferMode == TransferMode.P2pReceive)
+        {
+            await StartReceive(_parser.Path, _parser.EndPoint!, _parser.Code!);
+            return;
+        }
+
         var (success, path, isZip) = await Utils.TryPreparePathAsync(_parser.Path, _parser.FastPack);
 
         if (!success)
@@ -38,7 +45,7 @@ public sealed class Program
             AppDomain.CurrentDomain.ProcessExit += HandleProccesExit;
             SetConsoleCtrlHandler(_consoleCtrlDelegate, true);
 
-            Start(_path);
+            await Start(_path);
         }
         finally
         {
@@ -66,29 +73,37 @@ public sealed class Program
         return success;
     }
 
-    private static void Start(string path)
+    private static async Task Start(string path)
     {
         if (!File.Exists(path))
             return;
 
-        var server = new FTServer();
+        IFileSender sender = CreateSender();
 
         try
         {
-            if (server.Start(path, !_parser.Write))
+            if (await sender.StartAsync(path, !_parser.Write, CancellationToken.None))
             {
                 Console.WriteLine();
 
-                string? ip = Utils.GetIp();
-
-                if (!string.IsNullOrEmpty(ip))
+                if (sender is P2pSender p2pSender)
                 {
-                    FTViewer.PrintMessage("Scan QR code or open link to download:", ConsoleColor.Yellow);
+                    FTViewer.PrintMessage("Give this to the other side to receive the file:", ConsoleColor.Yellow);
+                    FTViewer.PrintMessage($"     ft -o {p2pSender.ConnectionString} -p <folder>", ConsoleColor.Cyan);
+                }
+                else
+                {
+                    string? ip = Utils.GetIp();
 
-                    string link = $"http://{ip}:{FTServer.HttpPort}/";
+                    if (!string.IsNullOrEmpty(ip))
+                    {
+                        FTViewer.PrintMessage("Scan QR code or open link to download:", ConsoleColor.Yellow);
 
-                    FTViewer.PrintMessage(QrViewer.GetCodeView(link), ConsoleColor.White);
-                    FTViewer.PrintMessage($"     {link}", ConsoleColor.Cyan);
+                        string link = $"http://{ip}:{HttpLanSender.HttpPort}/";
+
+                        FTViewer.PrintMessage(QrViewer.GetCodeView(link), ConsoleColor.White);
+                        FTViewer.PrintMessage($"     {link}", ConsoleColor.Cyan);
+                    }
                 }
 
                 FTViewer.PrintMessage("\n ─────────────────────────────────────────────", ConsoleColor.DarkGray);
@@ -104,7 +119,7 @@ public sealed class Program
 
                     if (hasCtrl && keyInfo.Key == ConsoleKey.Q)
                     {
-                        server.Stop();
+                        sender.Stop();
                         return;
                     }
                 }
@@ -114,6 +129,44 @@ public sealed class Program
         {
             throw;
         }
+    }
+
+    private static async Task StartReceive(string savePath, IPEndPoint endPoint, byte[] code)
+    {
+        var receiver = new P2pReceiver(endPoint, code, savePath);
+
+        void CancelHandler(object? sender, ConsoleCancelEventArgs e)
+        {
+            e.Cancel = true;
+            receiver.Stop();
+        }
+
+        Console.CancelKeyPress += CancelHandler;
+
+        try
+        {
+            FTViewer.PrintMessage("Connecting...", ConsoleColor.Yellow);
+
+            bool success = await receiver.ReceiveAsync(CancellationToken.None);
+
+            Console.WriteLine();
+
+            FTViewer.PrintMessage(success ? "Transfer complete." : "Transfer failed.", success ? ConsoleColor.Green : ConsoleColor.Red);
+        }
+        finally
+        {
+            Console.CancelKeyPress -= CancelHandler;
+            receiver.Stop();
+        }
+    }
+
+    private static IFileSender CreateSender()
+    {
+        return _parser.TransferMode switch
+        {
+            TransferMode.P2pSend => new P2pSender(),
+            _ => new HttpLanSender(),
+        };
     }
 
     private static void HandleProccesExit(object? sender, EventArgs e)

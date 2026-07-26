@@ -3,7 +3,7 @@ using System.Net;
 
 namespace FileTransmitter;
 
-internal sealed class FTServer
+internal sealed class HttpLanSender : IFileSender
 {
     public const int HttpPort = 8080;
     private const int MaxBufferSize = 81920;
@@ -13,19 +13,19 @@ internal sealed class FTServer
 
     private CancellationTokenSource? _token;
 
-    public bool Start(string path, bool isDownload)
+    public Task<bool> StartAsync(string path, bool isDownload, CancellationToken token)
     {
         if (!PathIsValid(path))
-            return false;
+            return Task.FromResult(false);
 
-        _token = new();
+        _token = CancellationTokenSource.CreateLinkedTokenSource(token);
 
         _listener.Prefixes.Add($"http://+:{HttpPort}/");
         _listener.Start();
 
         _ = Task.Run(() => ServerRoutine(path, isDownload, _token.Token));
 
-        return true;
+        return Task.FromResult(true);
     }
 
     public void Stop()
