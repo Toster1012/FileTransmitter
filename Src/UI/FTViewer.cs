@@ -15,7 +15,7 @@ internal static class FTViewer
     ██║     ██║   ██║   ███████║
     ╚═╝     ╚═╝   ╚═╝   ╚══════╝");
         Console.ForegroundColor = ConsoleColor.DarkGray;
-        Console.WriteLine("    File Transmitter v1.0.0");
+        Console.WriteLine($"    File Transmitter v{Config.ProjectVersion}");
         Console.ResetColor();
         Console.WriteLine("    ─────────────────────────────────────────────\n");
     }
@@ -56,10 +56,11 @@ internal static class FTViewer
         var builder = new StringBuilder();
 
         builder.AppendLine("    ft (argument not obligatory) file or folder path");
-        builder.AppendLine("    -------------------------------------------------------");
-        builder.AppendLine("    --help             | Print all command with description");
-        builder.AppendLine("    -w                 | Send file for writing other users");
-        builder.AppendLine("    -f                 | Fast pack archive");
+        builder.AppendLine("    -------------------------------------------------------------");
+        builder.AppendLine($"    --help               | Print all command with description");
+        builder.AppendLine($"    -w                   | Send file for writing other users");
+        builder.AppendLine($"    -f                   | Fast pack archive");
+        builder.AppendLine($"    -p                   | Specifies the path to the file or folder, must be last.");
 
         Console.WriteLine(builder.ToString());
     }

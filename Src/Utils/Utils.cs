@@ -20,13 +20,8 @@ internal static class Utils
         return ip?.ToString();
     }
 
-    public static async Task<(bool Success, string Path, bool IsZip)> TryGetPath(string[] args, bool isFastedPack)
+    public static async Task<(bool Success, string Path, bool IsZip)> TryPreparePathAsync(string path, bool isFastedPack)
     {
-        if (args.Length == 0)
-            return (false, string.Empty, false);
-
-        string path = string.Join(' ', args);
-
         if (string.IsNullOrEmpty(path))
         {
             FTViewer.PrintMessage("Error: Path is empty.\n", ConsoleColor.Red);

@@ -5,11 +5,10 @@ namespace FileTransmitter;
 public sealed class Program
 {
     private static readonly ConsoleCtrlDelegate _consoleCtrlDelegate = new(HandleWin32Close);
+    private static readonly ArgumentParser _parser = new();
 
     private static string? _path;
     private static bool _isZip;
-    private static bool _isFastedPack;
-    private static bool isDownload = true;
 
     private delegate bool ConsoleCtrlDelegate(int sig);
 
@@ -19,10 +18,13 @@ public sealed class Program
 
         FTViewer.PrintBanner();
 
-        if (!ArgumentProcess(ref args))
+        if (!ArgumentProcess(args))
             return;
 
-        var (success, path, isZip) = await Utils.TryGetPath(args, _isFastedPack);
+        if (string.IsNullOrEmpty(_parser.Path))
+            return;
+
+        var (success, path, isZip) = await Utils.TryPreparePathAsync(_parser.Path, _parser.FastPack);
 
         if (!success)
             return;
@@ -51,41 +53,17 @@ public sealed class Program
         }
     }
 
-    private static bool ArgumentProcess(ref string[] args)
+    private static bool ArgumentProcess(string[] args)
     {
-        if (args.Length == 0)
-        {
-            FTViewer.ShowHelpCommand();
-            return false;
-        }
+        bool success = _parser.TryParse(args);
 
-        if (args[0].Equals("--help"))
+        if (success && _parser.Help)
         {
             FTViewer.ShowHelpsCommand();
             return false;
         }
 
-        if (args[0].Equals("-w"))
-        {
-            isDownload = false;
-            args = args.AsSpan(1).ToArray();
-            return true;
-        }
-
-        if (args[0].Equals("-f"))
-        {
-            _isFastedPack = true;
-            args = args.AsSpan(1).ToArray();
-            return true;
-        }
-
-        if (args.Length == 0)
-        {
-            FTViewer.ShowHelpCommand();
-            return false;
-        }
-
-        return true;
+        return success;
     }
 
     private static void Start(string path)
@@ -97,7 +75,7 @@ public sealed class Program
 
         try
         {
-            if (server.Start(path, isDownload))
+            if (server.Start(path, !_parser.Write))
             {
                 Console.WriteLine();
 
