@@ -27,7 +27,11 @@ public sealed class Program
 
         if (_parser.TransferMode == TransferMode.P2pReceive)
         {
-            await StartReceive(_parser.Path, _parser.EndPoints!, _parser.Code!);
+            if (_parser.Listen)
+                await StartReceiveListen(_parser.Path);
+            else
+                await StartReceive(_parser.Path, _parser.EndPoints!, _parser.Code!);
+
             return;
         }
 
@@ -77,6 +81,12 @@ public sealed class Program
     {
         if (!File.Exists(path))
             return;
+
+        if (_parser.TransferMode == TransferMode.P2pSend && _parser.Connect)
+        {
+            await StartSendConnect(path, _parser.ConnectEndPoints!, _parser.ConnectCode!);
+            return;
+        }
 
         IFileSender sender = CreateSender();
 
@@ -128,6 +138,73 @@ public sealed class Program
         catch
         {
             throw;
+        }
+    }
+
+    private static async Task StartSendConnect(string path, IPEndPoint[] endPoints, byte[] code)
+    {
+        var sender = new P2pSendConnector(endPoints, code);
+
+        void CancelHandler(object? cancelSender, ConsoleCancelEventArgs e)
+        {
+            e.Cancel = true;
+            sender.Stop();
+        }
+
+        Console.CancelKeyPress += CancelHandler;
+
+        try
+        {
+            FTViewer.PrintMessage("Connecting...", ConsoleColor.Yellow);
+
+            bool success = await sender.SendAsync(path, CancellationToken.None);
+
+            Console.WriteLine();
+
+            FTViewer.PrintMessage(success ? "Transfer complete." : "Transfer failed.", success ? ConsoleColor.Green : ConsoleColor.Red);
+        }
+        finally
+        {
+            Console.CancelKeyPress -= CancelHandler;
+            sender.Stop();
+        }
+    }
+
+    private static async Task StartReceiveListen(string savePath)
+    {
+        var receiver = new P2pReceiveListener(savePath);
+
+        try
+        {
+            if (await receiver.StartAsync(CancellationToken.None))
+            {
+                Console.WriteLine();
+
+                FTViewer.PrintMessage("Give this to the other side to send the file:", ConsoleColor.Yellow);
+                FTViewer.PrintMessage($"     ft -n -c {receiver.ConnectionString} -p <file>", ConsoleColor.Cyan);
+
+                FTViewer.PrintMessage("\n ─────────────────────────────────────────────", ConsoleColor.DarkGray);
+                FTViewer.PrintMessage(" Press ", ConsoleColor.DarkGray, true);
+                FTViewer.PrintMessage("CTRL + Q", ConsoleColor.Yellow, true);
+                FTViewer.PrintMessage(" to stop the server.", ConsoleColor.White);
+                FTViewer.PrintMessage("", ConsoleColor.White);
+
+                while (true)
+                {
+                    ConsoleKeyInfo keyInfo = Console.ReadKey(true);
+                    bool hasCtrl = (keyInfo.Modifiers & ConsoleModifiers.Control) != 0;
+
+                    if (hasCtrl && keyInfo.Key == ConsoleKey.Q)
+                    {
+                        receiver.Stop();
+                        return;
+                    }
+                }
+            }
+        }
+        finally
+        {
+            receiver.Stop();
         }
     }
 

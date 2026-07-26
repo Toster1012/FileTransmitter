@@ -10,6 +10,7 @@
 		<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
 		<AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
 		<ApplicationManifest>app.manifest</ApplicationManifest>
+		<AotAssemblies>true</AotAssemblies>
 	</PropertyGroup>
 
 	<ItemGroup>

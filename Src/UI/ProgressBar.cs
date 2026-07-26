@@ -34,7 +34,7 @@ internal sealed class ProgressBar
         double elapsedSeconds = _stopwatch.Elapsed.TotalSeconds;
         double speed = elapsedSeconds > 0 ? current / elapsedSeconds : 0;
 
-        char spinnerChar = isFinal ? '✓' : Spinner[_spinnerIndex++ % Spinner.Length];
+        char spinnerChar = isFinal ? '*' : Spinner[_spinnerIndex++ % Spinner.Length];
 
         Console.ForegroundColor = ConsoleColor.Cyan;
         Console.Write($"\r    {spinnerChar} [{bar}] {fraction * 100,5:0.0}%  {FormatBytes(current)}/{FormatBytes(total)}  {FormatBytes((long)speed)}/s   ");

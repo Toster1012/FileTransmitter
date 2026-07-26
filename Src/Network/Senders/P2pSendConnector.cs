@@ -3,29 +3,30 @@ using System.Net.Sockets;
 
 namespace FileTransmitter;
 
-internal sealed class P2pReceiver : IFileReceiver
+internal sealed class P2pSendConnector
 {
     private readonly IPEndPoint[] _endPoints;
     private readonly byte[] _code;
-    private readonly string _saveDirectory;
 
     private TcpClient? _client;
 
-    public P2pReceiver(IPEndPoint[] endPoints, byte[] code, string saveDirectory)
+    public P2pSendConnector(IPEndPoint[] endPoints, byte[] code)
     {
         _endPoints = endPoints;
         _code = code;
-        _saveDirectory = saveDirectory;
     }
 
-    public async Task<bool> ReceiveAsync(CancellationToken token)
+    public async Task<bool> SendAsync(string path, CancellationToken token)
     {
+        if (!File.Exists(path))
+            return false;
+
         var dialer = new P2pDialer(_endPoints);
         _client = await dialer.ConnectAsync(token);
 
         if (_client is null)
         {
-            FTViewer.PrintMessage("Error: Could not connect to the sender.", ConsoleColor.Red);
+            FTViewer.PrintMessage("Error: Could not connect to the receiver.", ConsoleColor.Red);
             FTViewer.PrintConnectFailures(dialer.Failures);
             Console.WriteLine();
             return false;
@@ -43,16 +44,16 @@ internal sealed class P2pReceiver : IFileReceiver
                 return false;
             }
 
-            return await P2pFileTransfer.ReceiveFileAsync(stream, session, _saveDirectory, token);
+            return await P2pFileTransfer.SendFileAsync(stream, session, path, token);
         }
         catch (IOException)
         {
-            FTViewer.PrintMessage("Error: Connection to the sender was lost.\n", ConsoleColor.Red);
+            FTViewer.PrintMessage("Error: Connection to the receiver was lost.\n", ConsoleColor.Red);
             return false;
         }
         catch (SocketException)
         {
-            FTViewer.PrintMessage("Error: Connection to the sender was lost.\n", ConsoleColor.Red);
+            FTViewer.PrintMessage("Error: Connection to the receiver was lost.\n", ConsoleColor.Red);
             return false;
         }
     }

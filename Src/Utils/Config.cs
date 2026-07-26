@@ -11,6 +11,8 @@ internal static class Config
     public static string PathArgument = "-p";
     public static string SendP2P = "-n";
     public static string DownloadP2P = "-o";
+    public static string ConnectP2P = "-c";
+    public static string ListenP2P = "-l";
 
     public static int P2pPort = 8081;
     public static int P2pCodeByteLength = 5;

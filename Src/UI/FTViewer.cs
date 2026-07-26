@@ -1,4 +1,5 @@
-﻿using System.Text;
+﻿using System.Net;
+using System.Text;
 
 namespace FileTransmitter;
 
@@ -63,6 +64,8 @@ internal static class FTViewer
         builder.AppendLine($"    -p                   | Specifies the path to the file or folder, must be last.");
         builder.AppendLine($"    -n                   | Send file through a secure p2p connection. Must be used with -p.");
         builder.AppendLine($"    -o                   | Receive a file through a secure p2p connection, requires ip:port:code. Must be used with -p (destination folder), the -o value must come before -p.");
+        builder.AppendLine($"    -c                   | Used with -n instead of listening, connect out to the receiver, requires ip:port:code. Use this on the sending side if it is behind mobile network / CGNAT.");
+        builder.AppendLine($"    -l                   | Used with -o instead of connecting, listen and print a connection string for the sender. Use this on the receiving side if the sender is behind mobile network / CGNAT.");
         builder.AppendLine();
         builder.Append(BuildExamples());
 
@@ -80,6 +83,8 @@ internal static class FTViewer
         builder.AppendLine("    ft -f -p C:\\folder                                  Pack a folder fast and share it over LAN");
         builder.AppendLine("    ft -n -p C:\\file.zip                                Send a file through a secure p2p connection");
         builder.AppendLine("    ft -o 203.0.113.5:8081:ABCD2XYZ -p C:\\downloads     Receive a file through p2p");
+        builder.AppendLine("    ft -o -l -p C:\\downloads                            Receive a file, listen instead of connecting (use when the sender is on mobile network)");
+        builder.AppendLine("    ft -n -c 203.0.113.5:8081:ABCD2XYZ -p C:\\file.zip   Send a file, connect out instead of listening (use when you are on mobile network)");
 
         return builder.ToString();
     }
@@ -99,5 +104,11 @@ internal static class FTViewer
     public static void ShowHelpCommand()
     {
         FTViewer.PrintMessage($"    Usage: ft --help", ConsoleColor.White);
+    }
+
+    public static void PrintConnectFailures(IReadOnlyList<(IPEndPoint EndPoint, string Reason)> failures)
+    {
+        foreach (var (endPoint, reason) in failures)
+            PrintMessage($"    {endPoint} - {reason}", ConsoleColor.DarkGray);
     }
 }
